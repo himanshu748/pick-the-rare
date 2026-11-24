@@ -1,0 +1,125 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "pick-the-rare",
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "inline": true,
+        "entry": "splash.html"
+      },
+      "game": {
+        "entry": "game.html"
+      }
+    }
+  },
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Open playtest round",
+        "description": "Create today's round post when content is schedulable",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "Skip this round",
+        "description": "Void the day's round. Neutral for scores, streaks and leagues.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/skip"
+      },
+      {
+        "label": "Regenerate this round",
+        "description": "Clear an open, unvoted round and create a fresh post.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/regen"
+      },
+      {
+        "label": "Inspect round state",
+        "description": "Show the day's gate, intent, total and projection markers.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/inspect"
+      },
+      {
+        "label": "Adopt created post",
+        "description": "Bind the stored post-intent id to the day after an ambiguous create.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/adopt"
+      },
+      {
+        "label": "Backfill projections",
+        "description": "Finish result, leaderboard and streak writes for a finalized day.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/backfill"
+      },
+      {
+        "label": "Review question queue",
+        "description": "Approve or reject community-submitted questions.",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/review-queue"
+      },
+      {
+        "label": "Reschedule this week",
+        "description": "Fill this week's remaining empty days from the approved pool.",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/reschedule-week"
+      }
+    ]
+  },
+  "forms": {
+    "reviewSubmission": "/internal/forms/review"
+  },
+  "settings": {
+    "subreddit": {
+      "start-date": {
+        "type": "string",
+        "label": "First day (UTC, yyyy-mm-dd)",
+        "defaultValue": "2026-11-20",
+        "helpText": "Day numbering counts up from this UTC date. Storage and cutoff stay UTC."
+      },
+      "display-timezone": {
+        "type": "string",
+        "label": "Display timezone (IANA name)",
+        "defaultValue": "UTC",
+        "helpText": "Only affects how dates and the countdown are labelled in the app."
+      }
+    }
+  },
+  "triggers": {
+    "onAppInstall": "/internal/triggers/on-app-install"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build"
+  },
+  "permissions": {
+    "redis": true,
+    "journeys": true,
+    "reddit": {
+      "enable": true,
+      "asUser": ["SUBMIT_COMMENT", "SUBSCRIBE_TO_SUBREDDIT"]
+    }
+  },
+  "scheduler": {
+    "tasks": {
+      "daily-round": {
+        "endpoint": "/internal/scheduler/daily",
+        "cron": "* * * * *"
+      }
+    }
+  },
+  "dev": {
+    "subreddit": "pick_the_rare_dev"
+  }
+}
