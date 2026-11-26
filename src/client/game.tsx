@@ -72,15 +72,18 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!view || view.state !== 'open' || view.receipt || busy) return;
+      if (e.defaultPrevented || e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target?.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"])')) return;
       const n = '1234'.indexOf(e.key);
-      if (n >= 0) choose(n as Choice);
-      else if (e.key === 'Enter' && pick !== null) void lock();
+      if (e.key.length === 1 && n >= 0) choose(n as Choice);
+      else if (e.key === 'Enter' && !e.repeat && !target?.closest('button, a[href]')) void lock();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
   async function lock() {
-    if (pick === null || busy) return;
+    if (pick === null || busy || !view?.signedIn || view.state !== 'open' || view.receipt) return;
     setBusy(true); setError('');
     try {
       const response = await fetch('/api/pick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ choice: pick, prediction }) });
