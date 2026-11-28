@@ -95,10 +95,14 @@ export async function project(redis: RedisClient, day: string, batch = 256): Pro
   await redis.expire(key(day, 'projected'), 90 * DAY / 1000);
 }
 
-export type LeagueEntry = { user: string; points: number };
+export type LeagueEntry = { user: string; points: number; rank: number };
 export async function weekLeague(redis: RedisClient, day: string, limit = 5): Promise<LeagueEntry[]> {
-  const entries = await redis.zRange(wkey(weekKey(day)), -limit, -1);
-  return entries.map(e => ({ user: e.member, points: e.score })).reverse();
+  const entries = (await redis.zRange(wkey(weekKey(day)), -limit, -1)).reverse();
+  let rank = 0;
+  return entries.map((entry, index) => {
+    if (index === 0 || entry.score !== entries[index - 1]?.score) rank = index + 1;
+    return { user: entry.member, points: entry.score, rank };
+  });
 }
 export async function weekRank(redis: RedisClient, day: string, user: string): Promise<{ rank: number | null; points: number }> {
   const points = (await redis.zScore(wkey(weekKey(day)), user)) ?? 0;
