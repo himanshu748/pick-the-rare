@@ -200,7 +200,7 @@ export function App() {
           </div>}
           {view.league && view.league.top.length > 0 && <section className="league">
             <p className="eyebrow">THIS WEEK’S LEAGUE</p>
-            <ol>{view.league.top.map(e => <li key={e.rank} className={e.you ? 'you' : ''}><span>#{e.rank} {e.name}</span><b>{fmt(e.points)}</b></li>)}</ol>
+            <ol>{view.league.top.map((e, index) => <li key={index} className={e.you ? 'you' : ''}><span>#{e.rank} {e.name}</span><b>{fmt(e.points)}</b></li>)}</ol>
             {view.league.you && !view.league.top.some(e => e.you) && <p className="small">You: {fmt(view.league.you.points)} pts{view.league.you.rank ? ` · #${view.league.you.rank}` : ''}</p>}
           </section>}
           {view.state === 'revealed' && <>
