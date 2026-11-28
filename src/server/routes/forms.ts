@@ -6,6 +6,11 @@ import type { Submission } from '../../shared/community';
 
 export const forms = new Hono();
 
+function selectedValue(value: unknown): string | undefined {
+  const field = Array.isArray(value) && value.length === 1 ? value[0] : value;
+  return typeof field === 'string' ? field : undefined;
+}
+
 // Renders the oldest pending submission as a review form. Content is shown in
 // disabled fields; the decision select drives the submit handler.
 export function reviewForm(sub: Submission | null, counts: { pending: number; approved: number }): UiResponse {
@@ -29,17 +34,26 @@ export function reviewForm(sub: Submission | null, counts: { pending: number; ap
 }
 
 forms.post('/review', async c => {
-  const values = await c.req.json<{ id?: string; decision?: string; tier?: string; note?: string }>();
+  const values = await c.req.json<{ id?: string; decision?: unknown; tier?: unknown; note?: string }>();
+  // Devvit select fields return an array of selected values, even for one choice.
+  const decision = selectedValue(values.decision);
+  if (values.decision !== undefined && decision === undefined) {
+    return c.json<UiResponse>({ showToast: 'Unknown decision.' }, 400);
+  }
   const counts = await queueCounts(redis);
   const actor = (await reddit.getCurrentUsername().catch(() => undefined)) ?? context.userId ?? 'moderator';
-  if (!values.id || !values.decision || values.decision === 'skip') {
+  if (!values.id || !decision || decision === 'skip') {
     const [next] = await pending(redis, 1);
     return c.json<UiResponse>(reviewForm(next ?? null, counts));
   }
-  if (values.decision !== 'approve' && values.decision !== 'reject') {
+  if (decision !== 'approve' && decision !== 'reject') {
     return c.json<UiResponse>({ showToast: 'Unknown decision.' }, 400);
   }
-  const message = await review(redis, values.id, values.decision, Number(values.tier), actor, values.note || undefined);
+  const assignedTier = Number(selectedValue(values.tier));
+  if (decision === 'approve' && (!Number.isInteger(assignedTier) || assignedTier < 1 || assignedTier > 7)) {
+    return c.json<UiResponse>({ showToast: 'Pick a tier from 1 to 7.' }, 400);
+  }
+  const message = await review(redis, values.id, decision, assignedTier, actor, values.note || undefined);
   const [next] = await pending(redis, 1);
   const followUp = reviewForm(next ?? null, { ...counts, pending: counts.pending - 1 });
   if ('showForm' in followUp) {
