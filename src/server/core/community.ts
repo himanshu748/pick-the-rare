@@ -263,11 +263,11 @@ export async function scheduledQuestion(redis: RedisClient, day: string): Promis
   return validQuestion(parsed.question) ? parsed.question : 'none';
 }
 
-export async function markUsed(redis: RedisClient, day: string): Promise<void> {
+export async function markUsed(redis: RedisClient, day: string, expectedSubId?: string): Promise<void> {
   const raw = await redis.get(scheduleKey(day));
   if (!raw) return;
   const parsed = JSON.parse(raw) as Schedule;
-  if ('none' in parsed) return;
+  if ('none' in parsed || (expectedSubId !== undefined && parsed.subId !== expectedSubId)) return;
   const sub = await loadSub(redis, parsed.subId);
   if (sub && sub.state === 'scheduled') {
     sub.state = 'used';

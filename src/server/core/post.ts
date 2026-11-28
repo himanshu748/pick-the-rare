@@ -1,5 +1,5 @@
 import { context, reddit, redis } from '@devvit/web/server';
-import { cutoff, tier, type Question } from '../../shared/rules';
+import { cutoff, tier, validQuestion, type Question } from '../../shared/rules';
 import { dayNumber, weekKey } from '../../shared/streak';
 import { ensureWeekSchedule, markUsed, scheduledQuestion } from './community';
 import { project } from './progress';
@@ -15,6 +15,67 @@ const sample: Question = {
 };
 
 const privatePlaytestSubreddit = 'pick_the_rare_dev';
+const roundsIndex = 'cc:v1:rounds';
+const inspection = 'Post creation needs inspection before retrying.';
+
+type PostIntent = { day: string; question: Question; subId?: string | null } & (
+  | { status: 'creating' }
+  | { status: 'created'; postId: string; indexed?: boolean }
+);
+
+async function finishPostIndex(day: string, postId: string): Promise<string> {
+  const roundKey = key(day, 'round');
+  const intentKey = key(day, 'post-intent');
+  const gateKey = key(day, 'gate');
+  const tx = await redis.watch(intentKey, roundKey, gateKey);
+  let queued = false;
+  let ended = false;
+  try {
+    const raw = await redis.get(intentKey);
+    const intent: PostIntent | null = raw ? JSON.parse(raw) : null;
+    if (intent?.status !== 'created' || intent.day !== day || intent.postId !== postId) throw new Error(inspection);
+    const rawRound = await redis.get(roundKey);
+    if (intent.indexed && rawRound) return postId;
+    const round: Round = rawRound ? JSON.parse(rawRound) : { day, postId, question: intent.question };
+    if (round.postId !== postId || round.day !== day || !round.question || !validQuestion(round.question)) throw new Error(inspection);
+    const gate = await redis.get(gateKey);
+    const subId = intent.subId === undefined ? round.question.id : intent.subId;
+    if (subId) await markUsed(redis, day, subId);
+
+    await tx.multi();
+    queued = true;
+    await tx.set(`cc:v1:post:${postId}`, day);
+    if (gate !== 'closed' && gate !== 'void') {
+      if (!gate) await tx.set(gateKey, 'open', { nx: true });
+      await tx.zAdd(roundsIndex, { member: day, score: cutoff(day) });
+    }
+    await tx.set(roundKey, JSON.stringify(round));
+    await tx.set(intentKey, JSON.stringify({ ...intent, indexed: true }));
+    const result = await tx.exec();
+    ended = true;
+    if (!result?.length) throw new Error('Post indexing changed. Retry the creation action.');
+    return postId;
+  } finally {
+    if (!ended) {
+      if (queued) await tx.discard();
+      else await tx.unwatch();
+    }
+  }
+}
+
+async function existingPost(day: string): Promise<string | null> {
+  const rawRound = await redis.get(key(day, 'round'));
+  const round: Round | null = rawRound ? JSON.parse(rawRound) : null;
+  const rawIntent = await redis.get(key(day, 'post-intent'));
+  const intent: PostIntent | null = rawIntent ? JSON.parse(rawIntent) : null;
+  if (intent?.status === 'created' && (!round || intent.postId === round.postId)) {
+    if (!intent.postId) throw new Error(inspection);
+    return round && intent.indexed ? round.postId : finishPostIndex(day, intent.postId);
+  }
+  if (round) return round.postId;
+  if (intent) throw new Error(inspection);
+  return null;
+}
 
 // The recurring job uses human-authored snapshots. Only the moderator's
 // explicit action in the private test subreddit can request the labeled sample.
@@ -33,9 +94,9 @@ async function resolveQuestion(day: string, includePrivateSample: boolean): Prom
 }
 
 export async function createPost({ includePrivateSample = false } = {}): Promise<string | null> {
-  const day = new Date().toISOString().slice(0,10);
-  const existing = await redis.get(key(day,'round'));
-  if (existing) { const round: Round = JSON.parse(existing); return round.postId; }
+  const day = new Date().toISOString().slice(0, 10);
+  const existing = await existingPost(day);
+  if (existing) return existing;
   const resolved = await resolveQuestion(day, includePrivateSample);
   if (!resolved) return null;
   const { question, subId } = resolved;
@@ -43,9 +104,15 @@ export async function createPost({ includePrivateSample = false } = {}): Promise
   const n = dayNumber(day, cfg.startDate);
   const playtest = subId === null;
   const title = `${n ? `Day ${n}` : 'Day'} · ${question.question}${playtest ? ' · Playtest sample' : ''}`.slice(0, 300);
-  // Persist intent before the non-transactional Reddit operation. Never blindly
-  // retry an ambiguous post creation; moderators can inspect/adopt its ID.
-  await redis.set(key(day,'post-intent'),JSON.stringify({day,question,status:'creating'}));
+  // Only one caller can reserve the non-transactional Reddit operation. A
+  // lost reply leaves the intent in creating state for operator inspection.
+  const intentKey = key(day, 'post-intent');
+  const intent: PostIntent = { day, question, subId, status: 'creating' };
+  if (!(await redis.set(intentKey, JSON.stringify(intent), { nx: true }))) {
+    const winner = await existingPost(day);
+    if (winner) return winner;
+    throw new Error(inspection);
+  }
   const post = await reddit.submitCustomPost({
     title, entry:'default',
     postData:{day,dayNumber:n,question:question.question,tier:question.tier,author:question.author,playtest},
@@ -54,24 +121,18 @@ export async function createPost({ includePrivateSample = false } = {}): Promise
       : `Community question by ${question.author}. Pick the least popular answer. Reveal after midnight UTC.`},
     styles:{backgroundColor:'#F6F1E7FF',backgroundColorDark:'#171C26FF'},
   });
-  await redis.set(key(day,'post-intent'),JSON.stringify({day,question,status:'created',postId:post.id}));
-  const round: Round = {day,postId:post.id,question};
-  await redis.set(key(day,'round'),JSON.stringify(round));
-  await redis.set(`cc:v1:post:${post.id}`,day);
-  await redis.zAdd('cc:v1:rounds',{member:day,score:cutoff(day)});
-  await redis.set(key(day,'gate'),'open');
-  if (subId) await markUsed(redis, day);
-  return post.id;
+  await redis.set(intentKey, JSON.stringify({ ...intent, status: 'created', postId: post.id }));
+  return finishPostIndex(day, post.id);
 }
 export async function dailyTick() {
   // Known, bounded index. One round per day; process the oldest pending close.
-  const due = await redis.zRange('cc:v1:rounds',0,0);
+  const due = await redis.zRange(roundsIndex, 0, 0);
   const first = due[0];
   if (first && Date.now() >= cutoff(first.member)) {
     await rounds(redis).finalize(first.member);
     // Exactly-once projections; a throw here keeps the day indexed for retry.
     await project(redis, first.member);
-    await redis.zRem('cc:v1:rounds',[first.member]);
+    await redis.zRem(roundsIndex, [first.member]);
   }
   return createPost();
 }
