@@ -53,7 +53,7 @@ async function enrich(round: Round): Promise<View> {
     const [top, mine] = await Promise.all([weekLeague(redis, round.day), weekRank(redis, round.day, user)]);
     const table = await names(redis, top.map(e => e.user));
     const league: LeagueView = {
-      top: top.map((e, i) => ({ rank: i + 1, name: table[e.user] ?? (e.user === user ? 'You' : 'Player'), points: e.points, you: e.user === user })),
+      top: top.map(e => ({ rank: e.rank, name: table[e.user] ?? (e.user === user ? 'You' : 'Player'), points: e.points, you: e.user === user })),
       you: mine.rank ? { rank: mine.rank, points: mine.points } : (mine.points ? { rank: null, points: mine.points } : null),
     };
     view.league = league;

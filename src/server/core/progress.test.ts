@@ -4,7 +4,7 @@ import { expect } from 'vitest';
 import { cutoff, type Counts } from '../../shared/rules';
 import { weekKey } from '../../shared/streak';
 import { key, rounds, type Round } from './round';
-import { loadProgress, project, wkey, weekRank } from './progress';
+import { loadProgress, project, weekLeague, wkey, weekRank } from './progress';
 const test = createDevvitTest();
 const question = { id: 'fixture', question: 'Synthetic test fixture', answers: ['Fixture A', 'Fixture B', 'Fixture C', 'Fixture D'], author: 'test fixture', tier: 1, approved: true };
 const dayRound = (day: string): Round => ({ day, postId: `t3_${day}`, question });
@@ -70,4 +70,22 @@ test('weekRank reports weekly points and rank', async () => {
   await redis.zIncrBy(wkey(weekKey(day)), 't2_b', 8000);
   const rank = await weekRank(redis, day, 't2_b');
   expect(rank).toMatchObject({ rank: 1, points: 8000 });
+});
+
+test('weekly standings agree with personal rank when a tie spans the five-row cutoff', async () => {
+  const day = '2026-11-16';
+  const leaderboard = wkey(weekKey(day));
+  await redis.zIncrBy(leaderboard, 't2_first', 10000);
+  await redis.zIncrBy(leaderboard, 't2_second', 10000);
+  const tied = ['t2_a', 't2_b', 't2_c', 't2_d', 't2_e'];
+  for (const user of tied) await redis.zIncrBy(leaderboard, user, 8000);
+
+  const top = await weekLeague(redis, day);
+  expect(top.map(entry => entry.rank)).toEqual([1, 1, 3, 3, 3]);
+  for (const entry of top) {
+    expect(await weekRank(redis, day, entry.user)).toEqual({ rank: entry.rank, points: entry.points });
+  }
+  const outside = tied.find(user => !top.some(entry => entry.user === user));
+  expect(outside).toBeDefined();
+  expect(await weekRank(redis, day, outside!)).toEqual({ rank: 3, points: 8000 });
 });
