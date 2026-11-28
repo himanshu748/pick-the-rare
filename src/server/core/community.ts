@@ -254,13 +254,17 @@ export async function ensureWeekSchedule(redis: RedisClient, monday: string): Pr
   }
 }
 
-// The pure read half: returns the frozen snapshot for a day without writing.
-export async function scheduledQuestion(redis: RedisClient, day: string): Promise<Question | 'none' | null> {
+export async function scheduledEntry(redis: RedisClient, day: string): Promise<Extract<Schedule, { question: Question }> | 'none' | null> {
   const raw = await redis.get(scheduleKey(day));
   if (!raw) return null;
   const parsed = JSON.parse(raw) as Schedule;
   if ('none' in parsed) return 'none';
-  return validQuestion(parsed.question) ? parsed.question : 'none';
+  return validQuestion(parsed.question) ? parsed : 'none';
+}
+
+export async function scheduledQuestion(redis: RedisClient, day: string): Promise<Question | 'none' | null> {
+  const entry = await scheduledEntry(redis, day);
+  return entry && entry !== 'none' ? entry.question : entry;
 }
 
 export async function markUsed(redis: RedisClient, day: string, expectedSubId?: string): Promise<void> {

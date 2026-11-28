@@ -1,7 +1,7 @@
 import { context, reddit, redis } from '@devvit/web/server';
 import { cutoff, tier, validQuestion, type Question } from '../../shared/rules';
 import { dayNumber, weekKey } from '../../shared/streak';
-import { ensureWeekSchedule, markUsed, scheduledQuestion } from './community';
+import { ensureWeekSchedule, markUsed, scheduledEntry } from './community';
 import { project } from './progress';
 import { key, rounds, type Round } from './round';
 import { appSettings } from './settings';
@@ -81,11 +81,9 @@ async function existingPost(day: string): Promise<string | null> {
 // explicit action in the private test subreddit can request the labeled sample.
 async function resolveQuestion(day: string, includePrivateSample: boolean): Promise<{ question: Question; subId: string | null } | null> {
   await ensureWeekSchedule(redis, weekKey(day));
-  const scheduled = await scheduledQuestion(redis, day);
+  const scheduled = await scheduledEntry(redis, day);
   if (scheduled && scheduled !== 'none') {
-    const raw = await redis.get(`cc:v1:schedule:${day}`);
-    const subId = raw ? (JSON.parse(raw) as { subId?: string }).subId ?? null : null;
-    return { question: scheduled, subId };
+    return { question: scheduled.question, subId: scheduled.subId ?? null };
   }
   if (!includePrivateSample || context.subredditName?.toLowerCase() !== privatePlaytestSubreddit) return null;
   const claimed = await redis.set('cc:v1:playtest-sample-claim', day, { nx: true });

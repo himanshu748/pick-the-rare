@@ -199,3 +199,25 @@ otherSubredditTest('a pending prior day does not block a different scheduled rou
   expect(await redis.get('cc:v1:post:t3_new_day')).toBe(second);
   expect(post).toHaveBeenCalledOnce();
 });
+
+otherSubredditTest('the post only consumes the same question snapshot it publishes', async () => {
+  const day = mockClock();
+  const original = await scheduledFixture(day);
+  const competing = await scheduledFixture(day);
+  const scheduleKey = `cc:v1:schedule:${day}`;
+  await redis.set(scheduleKey, JSON.stringify({ day, question: original, subId: original.id }));
+  const get = redis.get.bind(redis);
+  let scheduleReads = 0;
+  vi.spyOn(redis, 'get').mockImplementation(async (redisKey) => {
+    if (redisKey === scheduleKey && ++scheduleReads === 3) {
+      await redis.set(scheduleKey, JSON.stringify({ day, question: competing, subId: competing.id }));
+    }
+    return get(redisKey);
+  });
+  vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(postFixture('t3_original'));
+
+  await expect(createPost()).resolves.toBe('t3_original');
+  const round = JSON.parse((await redis.get(key(day, 'round'))) ?? 'null');
+  expect(round.question.id).toBe(original.id);
+  expect((await loadSub(redis, competing.id))?.state).toBe('scheduled');
+});
