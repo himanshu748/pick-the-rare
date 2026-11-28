@@ -2,7 +2,7 @@
 
 A daily crowd-psychology game: choose the answer you expect the fewest people to choose, lock once, and return after midnight UTC. The approved specification is in PLAN.md.
 
-[58.5-second demo](https://youtu.be/AJ5ZlrWMJLw) · [Local result screenshot](docs/local-reveal.png)
+[58.5-second local demo](https://youtu.be/AJ5ZlrWMJLw) · [Local result screenshot](docs/local-reveal.png) · [Devpost project](https://devpost.com/software/pick-the-rare)
 
 ## How to play
 
