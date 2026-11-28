@@ -69,6 +69,52 @@ function postFixture(id: `t3_${string}`): Awaited<ReturnType<typeof reddit.submi
   return { id } as unknown as Awaited<ReturnType<typeof reddit.submitCustomPost>>;
 }
 
+privateTest('a failed first-play reservation leaves the private sample available for retry', async () => {
+  const day = mockClock();
+  const claimKey = 'cc:v1:playtest-sample-claim';
+  const intentKey = key(day, 'post-intent');
+  const post = vi.spyOn(reddit, 'submitCustomPost').mockResolvedValue(postFixture('t3_retry'));
+  const unavailable = new Error('Redis reservation unavailable');
+  let fail = true;
+  const set = redis.set.bind(redis);
+  vi.spyOn(redis, 'set').mockImplementation(async (...args) => {
+    if (fail && args[0] === intentKey) throw unavailable;
+    return set(...args);
+  });
+  const watch = redis.watch.bind(redis);
+  vi.spyOn(redis, 'watch').mockImplementation(async (...keys) => {
+    const tx = await watch(...keys);
+    if (fail && keys.includes(claimKey) && keys.includes(intentKey)) {
+      vi.spyOn(tx, 'exec').mockRejectedValueOnce(unavailable);
+    }
+    return tx;
+  });
+
+  await expect(createPost({ includePrivateSample: true })).rejects.toThrow(unavailable);
+  expect(post).not.toHaveBeenCalled();
+  expect(await redis.get(intentKey)).toBeUndefined();
+  expect(await redis.get(claimKey)).toBeUndefined();
+
+  fail = false;
+  await expect(createPost({ includePrivateSample: true })).resolves.toBe('t3_retry');
+  expect(await redis.get(claimKey)).toBe(day);
+  expect(await redis.get('cc:v1:post:t3_retry')).toBe(day);
+  vi.setSystemTime(new Date('2026-11-29T12:00:00Z'));
+  await expect(createPost({ includePrivateSample: true })).resolves.toBeNull();
+  expect(post).toHaveBeenCalledOnce();
+});
+
+privateTest('an ambiguous submission keeps the sample claim and the post intent for inspection', async () => {
+  const day = mockClock();
+  const post = vi.spyOn(reddit, 'submitCustomPost').mockRejectedValue(new Error('Reddit response lost'));
+
+  await expect(createPost({ includePrivateSample: true })).rejects.toThrow('Reddit response lost');
+  expect(await redis.get('cc:v1:playtest-sample-claim')).toBe(day);
+  expect(JSON.parse((await redis.get(key(day, 'post-intent'))) ?? 'null')).toMatchObject({ day, status: 'creating' });
+  await expect(createPost({ includePrivateSample: true })).rejects.toThrow('inspection');
+  expect(post).toHaveBeenCalledOnce();
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
