@@ -3,33 +3,33 @@ import { dayNumber, flairText, freshProgress, recordOutcome, recordPlay, weekKey
 describe('play streak', () => {
   it('counts consecutive days and tolerates same-day replays', () => {
     let p = freshProgress();
-    p = recordPlay(p, '2026-11-16');
-    p = recordPlay(p, '2026-11-16');
+    p = recordPlay(p, '2026-11-16', []);
+    p = recordPlay(p, '2026-11-16', []);
     expect(p.play).toMatchObject({ current: 1, best: 1, lastPlayed: '2026-11-16' });
-    p = recordPlay(p, '2026-11-17');
+    p = recordPlay(p, '2026-11-17', []);
     expect(p.play.current).toBe(2);
   });
   it('forgives one missed day per rolling seven-day window', () => {
     let p = freshProgress();
-    p = recordPlay(p, '2026-11-10');
-    p = recordPlay(p, '2026-11-12');
+    p = recordPlay(p, '2026-11-10', []);
+    p = recordPlay(p, '2026-11-12', ['2026-11-11']);
     expect(p.play).toMatchObject({ current: 2, graceUsedOn: '2026-11-11' });
-    p = recordPlay(p, '2026-11-14');
+    p = recordPlay(p, '2026-11-14', ['2026-11-13']);
     expect(p.play.current).toBe(1);
   });
   it('allows grace again once the window has passed', () => {
     let p = freshProgress();
-    p = recordPlay(p, '2026-11-01');
-    p = recordPlay(p, '2026-11-03');
+    p = recordPlay(p, '2026-11-01', []);
+    p = recordPlay(p, '2026-11-03', ['2026-11-02']);
     expect(p.play.graceUsedOn).toBe('2026-11-02');
-    p = recordPlay(p, '2026-11-09');
-    p = recordPlay(p, '2026-11-11');
+    p = recordPlay(p, '2026-11-09', ['2026-11-04', '2026-11-05']);
+    p = recordPlay(p, '2026-11-11', ['2026-11-10']);
     expect(p.play).toMatchObject({ current: 2, graceUsedOn: '2026-11-10' });
   });
   it('resets on a two-day gap', () => {
     let p = freshProgress();
-    p = recordPlay(p, '2026-11-10');
-    p = recordPlay(p, '2026-11-13');
+    p = recordPlay(p, '2026-11-10', []);
+    p = recordPlay(p, '2026-11-13', ['2026-11-11', '2026-11-12']);
     expect(p.play.current).toBe(1);
   });
 });

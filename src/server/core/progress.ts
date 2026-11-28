@@ -26,6 +26,20 @@ export async function names(redis: RedisClient, users: string[]): Promise<Record
 }
 export type Result = { eligible: boolean; points?: number; base?: number; bonus?: number; winner?: boolean };
 
+async function missedPlayDays(redis: RedisClient, lastPlayed: string | null, day: string, user: string): Promise<string[]> {
+  const missed: string[] = [];
+  if (!lastPlayed) return missed;
+  const end = utcDay(day);
+  for (let t = utcDay(lastPlayed) + DAY; t < end && missed.length < 2; t += DAY) {
+    const date = new Date(t).toISOString().slice(0, 10);
+    const gate = await redis.get(key(date, 'gate'));
+    if ((gate === 'open' || gate === 'closed') && !(await redis.get(key(date, `vote:${user}`)))) {
+      missed.push(date);
+    }
+  }
+  return missed;
+}
+
 // Exactly-once per user/day: the applied marker travels with leaderboard writes
 // in one transaction, so retries cannot double-score.
 async function applyOutcome(redis: RedisClient, day: string, user: string, counts: Counts, pick: { choice: Choice; prediction: Choice | null }, eligible: boolean): Promise<Result> {
@@ -37,8 +51,9 @@ async function applyOutcome(redis: RedisClient, day: string, user: string, count
   const scored = score(counts, pick.choice, pick.prediction);
   const result: Result = eligible && scored.eligible ? { eligible: true, points: scored.points, base: scored.base, bonus: scored.bonus, winner: scored.winner } : { eligible: false };
   let progress = await loadProgress(redis, user);
-  progress = recordPlay(progress, day);
-  if (eligible && progress.cursor !== null && progress.cursor < day) {
+  const missed = await missedPlayDays(redis, progress.play.lastPlayed, day, user);
+  progress = recordPlay(progress, day, missed);
+  if (progress.cursor !== null && progress.cursor < day) {
     // Missed finalized days between the last outcome and this one break the
     // contrarian streak before today's outcome applies.
     for (let t = utcDay(progress.cursor) + DAY; t < utcDay(day); t += DAY) {
