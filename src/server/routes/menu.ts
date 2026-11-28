@@ -18,8 +18,8 @@ async function dayOf(): Promise<{ day: string; gate: string | undefined } | { er
 }
 menu.post('/post-create', async c => {
   try {
-    const id = await createPost();
-    return c.json<UiResponse>(id ? { navigateTo: `https://www.reddit.com/comments/${id.slice(3)}` } : { showToast: 'The sample has already been used. Add authored content for future rounds.' });
+    const id = await createPost({ includePrivateSample: true });
+    return c.json<UiResponse>(id ? { navigateTo: `https://www.reddit.com/comments/${id.slice(3)}` } : { showToast: 'No approved question is ready. Review community suggestions for future rounds.' });
   } catch { return c.json<UiResponse>({ showToast: 'Creation needs inspection. Check the stored intent before retrying.' }, 500); }
 });
 menu.post('/skip', async c => {

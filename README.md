@@ -1,8 +1,20 @@
-# Pick the Rare: implementation in progress
+# Pick the Rare
 
 A daily crowd-psychology game: choose the answer you expect the fewest people to choose, lock once, and return after midnight UTC. The approved specification is in PLAN.md.
 
-Implemented: pure UTC date and cutoff rules, integer rarity scoring with a five-point prediction bonus, tied outcomes, no competitive score below ten participants, content validation and deterministic frozen-manifest lookup. Twenty-three Vitest tests pass, including 120 consecutive synthetic dates and projection exactly-once guarantees. These are local rule tests, not live Reddit validation.
+[58.5-second demo](https://youtu.be/AJ5ZlrWMJLw) · [Local result screenshot](docs/local-reveal.png)
+
+## How to play
+
+1. Open a round from its Reddit post. Pick the answer you expect the fewest players to choose.
+2. Optionally predict the most popular answer for a five-point bonus. Lock your choice once. Reloading shows the sealed receipt.
+3. Reopen after midnight UTC. The final distribution and scores appear once at least ten participants have played and the round has finalized. Smaller rounds show participation only.
+
+The 58.5-second local walkthrough covers the splash, optional prediction, sealed receipt, simulated midnight and final scoring. Its on-screen label identifies the simulated Reddit account, votes and Devvit endpoints throughout. The phone-width browser checks cover opening from the splash, low-turnout reveal and signed-out handling. See the [verification log](docs/verification.md) for what was observed on Reddit.
+
+## How it works
+
+The game implements UTC cutoff rules, integer rarity scoring, ties, low-turnout suppression, content validation and deterministic question scheduling. Run `npm test` to check the rule, round, scoring projection, scheduling and private moderator sample paths locally.
 
 The 60 records in content/seed_questions.json are authoring TODOs, deliberately rejected by validation. No production question bank exists yet. The owner authorized one AI-assisted, explicitly labeled playtest sample on 2026-11-15; it is held separately in the server and is used only once. Picks and counters are written in one watched Redis transaction; repeated requests return the original receipt. Closing a gate precedes count aggregation, and no count/total/score is returned before a finalized reveal.
 
@@ -10,10 +22,19 @@ Post-cutoff, the scheduler finalizes counts then runs projections: per-user resu
 
 Sharing is explicit: the result comment posts as the user only on tap, with a copyable spoiler-safe fallback when user actions are unavailable. Subscribe and flair are opt-in and fail gracefully. Moderator post menus cover skip, regenerate (open, unvoted rounds only), inspect and post-intent adoption, plus a backfill that finishes projections for a finalized day. Subreddit settings hold the start date and a display timezone; storage and cutoff stay UTC. Analytics sit behind one track() helper on the Journeys endpoints; receipts are expected to be denied until the app is approved.
 
-Live status: v0.0.3 is installed on r/pick_the_rare_dev. The one-participant sample round revealed correctly after the cutoff (state `revealed`, total 1, competitive fields suppressed). The live reveal, sealed receipt and persisted receipt were verified through the authenticated init endpoint. Multi-player distribution, streak and league behavior are covered by tests but not yet exercised live.
+The [archived private sample post](https://www.reddit.com/r/pick_the_rare_dev/comments/1y0ye2w/) previously showed a sealed receipt and a correct one-participant reveal on v0.0.3, as recorded in the verification log. Current judge access and multi-player scoring on Reddit still need verification.
 
-Use Node 24.18 or newer. Run npm install, then npm test. Never run devvit publish or submit for review. The launch script has been removed. Run `npm run dev` from this directory using the Reddit developer account that owns the private test installation.
+## Owner playtest and judge access
 
-## Private Reddit playtest
+Use Node 24.18 or newer. From this directory, the owner can run:
 
-Open the [private sample round](https://www.reddit.com/r/pick_the_rare_dev/comments/1y0ye2w/) with an approved Reddit account. Choose one answer and optionally predict the most popular answer. After locking, reload and open the game again to see the saved receipt. Results become available after midnight UTC once the round finalizes. The sample day finalized before projections existed; run the moderator action "Backfill projections" on the post to finish its result, streak and league writes.
+```sh
+npm ci
+npm run login
+npx devvit whoami
+npm run dev -- pick_the_rare_dev
+```
+
+If the owner account still receives the previously documented suspension error, use the [Reddit appeal page](https://www.reddit.com/appeal). Follow the [official playtest guide](https://developers.reddit.com/docs/guides/tools/playtest).
+
+The **Open playtest round** moderator action can use the existing one-time labeled sample on `r/pick_the_rare_dev` when no approved question is scheduled. Scheduled rounds use approved human-authored questions. To prepare a judge round, collect a human-authored suggestion from the community panel, approve it with the appropriate tier, and use **Reschedule this week** if the day was empty. Then verify the interactive post from a judge-accessible account and use that permalink for the entry. The [hackathon rules](https://redditgameofday2026.devpost.com/rules) explain public test subreddit and Devvit admin access options.
