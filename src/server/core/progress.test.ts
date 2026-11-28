@@ -64,6 +64,51 @@ test('a missed eligible day breaks the contrarian streak before the next win', a
   expect(progress.contra).toMatchObject({ current: 1, best: 1 });
   expect(progress.play.current).toBe(2);
 });
+test('void and no-content days preserve the play streak without using grace', async () => {
+  const user = 't2_streak';
+  const votes = { [user]: { choice: 1, prediction: null } };
+  await seededFinal('2026-11-16', [2, 1, 4, 3], votes);
+  await redis.set(key('2026-11-17', 'gate'), 'void');
+  await seededFinal('2026-11-19', [2, 1, 4, 3], votes);
+
+  await project(redis, '2026-11-16');
+  await project(redis, '2026-11-19');
+
+  expect((await loadProgress(redis, user)).play).toMatchObject({
+    current: 2, best: 2, lastPlayed: '2026-11-19', graceUsedOn: null,
+  });
+});
+
+test('one unplayed round uses its own grace date even across days with no round', async () => {
+  const user = 't2_streak';
+  const votes = { [user]: { choice: 1, prediction: null } };
+  await seededFinal('2026-11-16', [2, 1, 4, 3], votes);
+  await seededFinal('2026-11-18', [5, 5, 0, 0]);
+  await seededFinal('2026-11-20', [2, 1, 4, 3], votes);
+
+  await project(redis, '2026-11-16');
+  await project(redis, '2026-11-20');
+
+  expect((await loadProgress(redis, user)).play).toMatchObject({
+    current: 2, lastPlayed: '2026-11-20', graceUsedOn: '2026-11-18',
+  });
+});
+
+test('playing a low-turnout round does not hide a missed competitive round', async () => {
+  const user = 't2_streak';
+  const votes = { [user]: { choice: 1, prediction: null } };
+  await seededFinal('2026-11-16', [2, 1, 4, 3], votes);
+  await seededFinal('2026-11-17', [5, 5, 0, 0]);
+  await seededFinal('2026-11-18', [0, 1, 0, 0], votes);
+  await seededFinal('2026-11-19', [2, 1, 4, 3], votes);
+
+  await project(redis, '2026-11-16');
+  await project(redis, '2026-11-18');
+  await project(redis, '2026-11-19');
+
+  expect((await loadProgress(redis, user)).contra).toMatchObject({ current: 1, best: 1 });
+});
+
 test('weekRank reports weekly points and rank', async () => {
   const day = '2026-11-16';
   await redis.zIncrBy(wkey(weekKey(day)), 't2_a', 5000);

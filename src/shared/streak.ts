@@ -22,27 +22,15 @@ export const freshProgress = (): Progress => ({
 const daysBetween = (a: string, b: string) => Math.round((utcDay(b) - utcDay(a)) / DAY);
 export const graceOpen = (play: PlayStreak, missedDay: string): boolean =>
   play.graceUsedOn === null || daysBetween(play.graceUsedOn, missedDay) >= 7;
-export function recordPlay(progress: Progress, day: string): Progress {
+export function recordPlay(progress: Progress, day: string, missedDays: readonly string[]): Progress {
   const play = { ...progress.play };
-  if (play.lastPlayed === day) return { ...progress, play };
-  if (play.lastPlayed === null) {
+  if (play.lastPlayed !== null && daysBetween(play.lastPlayed, day) <= 0) return progress;
+  const [missed] = missedDays;
+  if (play.lastPlayed === null || missedDays.length > 1 || (missed && !graceOpen(play, missed))) {
     play.current = 1;
   } else {
-    const gap = daysBetween(play.lastPlayed, day);
-    if (gap <= 0) return { ...progress, play };
-    if (gap === 1) {
-      play.current += 1;
-    } else if (gap === 2) {
-      const missed = new Date(utcDay(day) - DAY).toISOString().slice(0, 10);
-      if (!graceOpen(play, missed)) {
-        play.current = 1;
-      } else {
-        play.graceUsedOn = missed;
-        play.current += 1;
-      }
-    } else {
-      play.current = 1;
-    }
+    if (missed) play.graceUsedOn = missed;
+    play.current += 1;
   }
   play.lastPlayed = day;
   play.best = Math.max(play.best, play.current);
