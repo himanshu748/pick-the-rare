@@ -6,7 +6,7 @@ import { appSettings } from '../core/settings';
 import { ballotView, mine, remainingToday, submit, support, withdraw } from '../core/community';
 import { dayNumber, flairText, graceOpen, weeklyTier } from '../../shared/streak';
 import { mondayAfter, parseDraft, type CommunityView } from '../../shared/community';
-import type { LeagueView, StreakView, View } from '../../shared/contracts';
+import type { InitResponse, LeagueView, StreakView, View } from '../../shared/contracts';
 const service = rounds(redis);
 const DAY = 86400000;
 export const api = new Hono();
@@ -64,7 +64,9 @@ async function enrich(round: Round): Promise<View> {
 }
 api.get('/init', async c => {
   const round = await currentRound();
-  return c.json(round ? await enrich(round) : { state: 'no-content', message: 'The next question is being prepared.' });
+  return c.json<InitResponse>(round ? await enrich(round) : {
+    state: 'no-content', signedIn: !!context.userId, message: 'The next question is being prepared.',
+  });
 });
 api.post('/pick', async c => {
   if (!context.userId) return c.json({ error: 'Sign in to lock a choice.' }, 401);

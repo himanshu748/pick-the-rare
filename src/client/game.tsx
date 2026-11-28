@@ -1,7 +1,7 @@
 import './index.css';
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { View } from '../shared/contracts';
+import type { InitResponse } from '../shared/contracts';
 import type { Choice } from '../shared/rules';
 import { track } from './lib/track';
 import { sfx } from './lib/sfx';
@@ -25,8 +25,9 @@ function Countdown({ deadline }: { deadline: number }) {
 }
 
 export function App() {
-  const [view, setView] = useState<View | null>(null);
-  const [empty, setEmpty] = useState(false);
+  const [content, setContent] = useState<InitResponse | null>(null);
+  const empty = content?.state === 'no-content';
+  const view = empty ? null : content;
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [pick, setPick] = useState<Choice | null>(null);
@@ -49,14 +50,14 @@ export function App() {
     try {
       const response = await fetch('/api/init');
       if (!response.ok) throw new Error('Could not load this round.');
-      const data: View | { state: 'no-content' } = await response.json();
-      if (data.state === 'no-content') { setEmpty(true); setView(null); return; }
-      const v = data as View;
-      setEmpty(false); setView(v); setError('');
-      setSubscribed(!!v.subscribed);
-      setFlair(v.flair ?? null);
-      if (v.streaks?.play.lastPlayed && v.streaks.play.lastPlayed < v.day) once('return_next_day', { day: v.day });
-      if (v.state === 'revealed') once('reveal_view', { day: v.day });
+      const data: InitResponse = await response.json();
+      setError('');
+      setContent(data);
+      if (data.state === 'no-content') return;
+      setSubscribed(!!data.subscribed);
+      setFlair(data.flair ?? null);
+      if (data.streaks?.play.lastPlayed && data.streaks.play.lastPlayed < data.day) once('return_next_day', { day: data.day });
+      if (data.state === 'revealed') once('reveal_view', { day: data.day });
     } catch { setError('Could not load this round. Please retry.'); }
   }
   useEffect(() => {
@@ -89,7 +90,7 @@ export function App() {
       const response = await fetch('/api/pick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ choice: pick, prediction }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      setView(data);
+      setContent(data);
       sfx.click();
       once('attempt_complete', { choice: pick });
     } catch (e) { setError(e instanceof Error ? e.message : 'Save not confirmed. Reload to check your receipt.'); }
@@ -220,8 +221,8 @@ export function App() {
           {note && <p className="note" role="status">{note}</p>}
         </>}
         <footer>Question by {view.author} · One pick per day · UTC cutoff</footer>
-        <Suspense fallback={null}><Community signedIn={view.signedIn} /></Suspense>
       </>}
+    {content && <Suspense fallback={null}><Community signedIn={content.signedIn} /></Suspense>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<App />);
