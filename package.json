@@ -19,16 +19,16 @@
     "node": ">=24.18.0"
   },
   "dependencies": {
-    "@devvit/start": "0.15.3",
-    "@devvit/web": "0.15.3",
+    "@devvit/start": "0.15.6",
+    "@devvit/web": "0.15.6",
     "@hono/node-server": "2.1.6",
-    "devvit": "0.15.3",
+    "devvit": "0.15.6",
     "hono": "4.13.17",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@devvit/test": "^0.15.3",
+    "@devvit/test": "^0.15.6",
     "@eslint/js": "10.0.1",
     "@tailwindcss/vite": "4.3.5",
     "@types/node": "^24.13.3",
