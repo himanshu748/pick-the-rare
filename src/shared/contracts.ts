@@ -19,3 +19,4 @@ export type View = BaseView & {
   percentile?: number; streaks?: StreakView; league?: LeagueView; shareText?: string;
   flair?: { optedIn: boolean; text: string | null }; subscribed?: boolean;
 };
+export type InitResponse = View | { state: 'no-content'; signedIn: boolean; message: string };
