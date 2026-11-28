@@ -1,5 +1,12 @@
 # Verification log
 
+## 2026-11-28 (local first-round walkthrough)
+
+- A browser at phone width opened the splash, locked one choice, retained its receipt after a reload and showed the low-turnout reveal without distribution, score or sharing. A signed-out fixture could select a choice but could not lock it.
+- The desktop browser opened the same splash, chose D, predicted B, reopened the sealed receipt, then used **Check reveal** after the simulated cutoff. The local fixture revealed all four counts and the correct five-point prediction bonus. These were real client interactions with simulated Devvit endpoints and votes. The recording runs 58.5 seconds.
+- The private moderator sample regression proved that a previously frozen empty day could never reach the fallback. Tests now cover one private moderator sample, no sample outside the test subreddit and priority for approved community content. All 33 tests, typecheck, lint and build passed locally.
+- The archived private post could not be opened for a fresh judge-access check. No Reddit upload or post action was run for this pass.
+
 ## 2026-11-25 (community pipeline slice, not deployed)
 
 - `npm test`: 30 tests pass, including `server/core/community`: draft validation, rate limit of three per user per day, approve/reject transitions, author-only withdraw, one immutable ballot vote with self-vote and closed-ballot rejection, frozen-order scheduling by support then approval timestamp then id, tier-matched day picks, explicit no-content snapshots and the scheduled-to-used transition.

@@ -1,4 +1,4 @@
-import { reddit, redis } from '@devvit/web/server';
+import { context, reddit, redis } from '@devvit/web/server';
 import { cutoff, tier, type Question } from '../../shared/rules';
 import { dayNumber, weekKey } from '../../shared/streak';
 import { ensureWeekSchedule, markUsed, scheduledQuestion } from './community';
@@ -14,9 +14,11 @@ const sample: Question = {
   author: 'AI-assisted playtest sample', tier: 1, approved: true,
 };
 
-// Resolves the day's question: frozen schedule first, then the one-time
-// playtest sample. Returns null for the explicit no-content state.
-async function resolveQuestion(day: string): Promise<{ question: Question; subId: string | null } | null> {
+const privatePlaytestSubreddit = 'pick_the_rare_dev';
+
+// The recurring job uses human-authored snapshots. Only the moderator's
+// explicit action in the private test subreddit can request the labeled sample.
+async function resolveQuestion(day: string, includePrivateSample: boolean): Promise<{ question: Question; subId: string | null } | null> {
   await ensureWeekSchedule(redis, weekKey(day));
   const scheduled = await scheduledQuestion(redis, day);
   if (scheduled && scheduled !== 'none') {
@@ -24,17 +26,17 @@ async function resolveQuestion(day: string): Promise<{ question: Question; subId
     const subId = raw ? (JSON.parse(raw) as { subId?: string }).subId ?? null : null;
     return { question: scheduled, subId };
   }
-  if (scheduled === 'none') return null;
+  if (!includePrivateSample || context.subredditName?.toLowerCase() !== privatePlaytestSubreddit) return null;
   const claimed = await redis.set('cc:v1:playtest-sample-claim', day, { nx: true });
   if (!claimed) return null;
   return { question: { ...sample, tier: tier(day) }, subId: null };
 }
 
-export async function createPost(): Promise<string | null> {
+export async function createPost({ includePrivateSample = false } = {}): Promise<string | null> {
   const day = new Date().toISOString().slice(0,10);
   const existing = await redis.get(key(day,'round'));
   if (existing) { const round: Round = JSON.parse(existing); return round.postId; }
-  const resolved = await resolveQuestion(day);
+  const resolved = await resolveQuestion(day, includePrivateSample);
   if (!resolved) return null;
   const { question, subId } = resolved;
   const cfg = await appSettings();
