@@ -15,6 +15,7 @@ const sample: Question = {
 };
 
 const privatePlaytestSubreddit = 'pick_the_rare_dev';
+const privateSampleClaim = 'cc:v1:playtest-sample-claim';
 const roundsIndex = 'cc:v1:rounds';
 const inspection = 'Post creation needs inspection before retrying.';
 
@@ -22,6 +23,28 @@ type PostIntent = { day: string; question: Question; subId?: string | null } & (
   | { status: 'creating' }
   | { status: 'created'; postId: string; indexed?: boolean }
 );
+
+async function reservePrivateSample(intentKey: string, intent: PostIntent): Promise<boolean> {
+  const tx = await redis.watch(privateSampleClaim, intentKey);
+  let queued = false;
+  let ended = false;
+  try {
+    if (await redis.get(privateSampleClaim) || await redis.get(intentKey)) return false;
+    await tx.multi();
+    queued = true;
+    // Record the claim and intent together so storage cannot consume the sample on its own.
+    await tx.set(privateSampleClaim, intent.day);
+    await tx.set(intentKey, JSON.stringify(intent));
+    const result = await tx.exec();
+    ended = true;
+    return !!result?.length;
+  } finally {
+    if (!ended) {
+      if (queued) await tx.discard();
+      else await tx.unwatch();
+    }
+  }
+}
 
 async function finishPostIndex(day: string, postId: string): Promise<string> {
   const roundKey = key(day, 'round');
@@ -79,16 +102,14 @@ async function existingPost(day: string): Promise<string | null> {
 
 // The recurring job uses human-authored snapshots. Only the moderator's
 // explicit action in the private test subreddit can request the labeled sample.
-async function resolveQuestion(day: string, includePrivateSample: boolean): Promise<{ question: Question; subId: string | null } | null> {
+async function resolveQuestion(day: string, includePrivateSample: boolean): Promise<{ question: Question; subId: string | null; privateSample?: true } | null> {
   await ensureWeekSchedule(redis, weekKey(day));
   const scheduled = await scheduledEntry(redis, day);
   if (scheduled && scheduled !== 'none') {
     return { question: scheduled.question, subId: scheduled.subId ?? null };
   }
   if (!includePrivateSample || context.subredditName?.toLowerCase() !== privatePlaytestSubreddit) return null;
-  const claimed = await redis.set('cc:v1:playtest-sample-claim', day, { nx: true });
-  if (!claimed) return null;
-  return { question: { ...sample, tier: tier(day) }, subId: null };
+  return { question: { ...sample, tier: tier(day) }, subId: null, privateSample: true };
 }
 
 export async function createPost({ includePrivateSample = false } = {}): Promise<string | null> {
@@ -97,7 +118,7 @@ export async function createPost({ includePrivateSample = false } = {}): Promise
   if (existing) return existing;
   const resolved = await resolveQuestion(day, includePrivateSample);
   if (!resolved) return null;
-  const { question, subId } = resolved;
+  const { question, subId, privateSample } = resolved;
   const cfg = await appSettings();
   const n = dayNumber(day, cfg.startDate);
   const playtest = subId === null;
@@ -106,9 +127,13 @@ export async function createPost({ includePrivateSample = false } = {}): Promise
   // lost reply leaves the intent in creating state for operator inspection.
   const intentKey = key(day, 'post-intent');
   const intent: PostIntent = { day, question, subId, status: 'creating' };
-  if (!(await redis.set(intentKey, JSON.stringify(intent), { nx: true }))) {
+  const reserved = privateSample
+    ? await reservePrivateSample(intentKey, intent)
+    : await redis.set(intentKey, JSON.stringify(intent), { nx: true });
+  if (!reserved) {
     const winner = await existingPost(day);
     if (winner) return winner;
+    if (privateSample && await redis.get(privateSampleClaim)) return null;
     throw new Error(inspection);
   }
   const post = await reddit.submitCustomPost({
